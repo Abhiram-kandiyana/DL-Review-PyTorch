@@ -23,17 +23,18 @@ class SelfAttention(nn.Module):
         return output
 
 
-batch_size = 2
-seq_len = 5
-d_model = 512
+if __name__ == "__main__":
+    batch_size = 2
+    seq_len = 5
+    d_model = 512
 
-X = torch.randn(batch_size,seq_len,d_model)
+    X = torch.randn(batch_size,seq_len,d_model)
 
-self_att = SelfAttention(d_model)
+    self_att = SelfAttention(d_model)
 
-output = self_att(X)
+    output = self_att(X)
 
-print("Output Shape", output.shape)
+    print("Output Shape", output.shape)
 
 
 
