@@ -5,9 +5,9 @@ import os
 class SelfAttention(nn.Module):
     def __init__(self, d_model = 512, W_q = None, W_v = None, W_k = None):
         super().__init__()
-        self.W_q = nn.parameter.Parameter(W_q if W_q is not None else torch.randn(d_model, d_model))
-        self.W_v = nn.parameter.Parameter(W_v if W_v is not None else torch.randn(d_model, d_model))
-        self.W_k = nn.parameter.Parameter(W_k if W_k is not None else torch.randn(d_model, d_model))
+        self.W_q = nn.Parameter(W_q if W_q is not None else torch.randn(d_model, d_model))
+        self.W_v = nn.Parameter(W_v if W_v is not None else torch.randn(d_model, d_model))
+        self.W_k = nn.Parameter(W_k if W_k is not None else torch.randn(d_model, d_model))
 
 
     def forward(self, X):
