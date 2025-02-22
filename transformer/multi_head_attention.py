@@ -39,7 +39,7 @@ class MultiHeadAttention(nn.Module):
         output = (
             output.permute(1, 2, 0, 3)  # (batch_size, seq_len, num_heads, d_head)
             .contiguous()
-            .view(X.shape[0], -1, self.n_heads * self.d_k)  # (batch_size, seq_len, n_heads * d_head)
+            .view(X.shape[0], -1, self.n_heads * self.d_head)  # (batch_size, seq_len, n_heads * d_head)
         )
 
         output = output @ self.W_o  # (batch_size, seq_len, n_heads * d_head)
