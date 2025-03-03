@@ -14,6 +14,13 @@
 ## RECEPTIVE FIELD
 8. What is a receptive filed? Why is it useful?
 9. How do you calculate the receptive field of a feature in a layer?
-10. 
+
+## RESNET
+
+## VGG16
+
+## OBJECT DETECTION
+
+## IMAGE SEGMENTATION
 
 
