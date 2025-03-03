@@ -1,9 +1,34 @@
 import torch
 import torch.nn as nn
+import lstm
+import copy
 
 
-class LSTM(nn.Module):
+def clones(module, N):
+    "Produce N identical layers."
+    return nn.ModuleList([copy.deepcopy(module) for _ in range(N)])
+
+class Encoder(nn.Module):
     def __init__(self, x_dim, hidden_dim):
+
+        super().__init__()
+
+        self.lstm1 = lstm.LSTM(x_dim,hidden_dim)
+        self.lstm2 = lstm.LSTM(hidden_dim, 2*hidden_dim)
+        self.lstm3 = lstm.LSTM(2*hidden_dim, 2*hidden_dim)
+
+
+    def forward(self, x):
+
+        h1, _ = self.lstm1(x)
+        h2, _ = self.lstm2(h1)
+        h3, c3 = self.lstm3(h2)
+
+        return h3,c3
+
+#inference time Decoder
+class DecoderLSTM(nn.Module):
+    def __init__(self, x_dim, seq_len, hidden_dim, vocab_size):
         super().__init__()
 
         self.hidden_dim = hidden_dim
@@ -28,6 +53,12 @@ class LSTM(nn.Module):
         self.W_xz = nn.Parameter(torch.randn(x_dim, hidden_dim) * 0.1)
         self.b_z = nn.Parameter(torch.zeros(hidden_dim))
 
+        self.linear_list = clones(self.Linear(hidden_dim, vocab_size), seq_len)
+
+
+
+
+
     def step(self, x, h, c):
         i = torch.sigmoid((h @ self.W_hi) + (x @ self.W_xi) + self.b_i)
         f = torch.sigmoid((h @ self.W_hf) + (x @ self.W_xf) + self.b_f)
@@ -39,44 +70,38 @@ class LSTM(nn.Module):
 
         return h, c
 
-    def forward(self, X):
-        h = torch.zeros(X.shape[0], self.hidden_dim, device=X.device)  # (batch_size, hid_dim)
-        c = torch.zeros(X.shape[0], self.hidden_dim, device=X.device)
+    def forward(self, x, h, c):
 
-        X = X.transpose(0, 1)  # (seq_len, batch_size, x_dim)
+        x = x.transpose(0, 1)  # (seq_len, batch_size, x_dim)
 
         outputs = []
         cell_states = []
 
-        for x in X:
-            h, c = self.step(x, h, c)
-            outputs.append(h)
+        x_first = x[0]
+        h, c = self.step(x_first, h, c)
+        y = torch.softmax(self.linear_list[0](h), dim=-1)
+        x_curr = torch.argmax(y, dim=-1)
+        x_curr = embedding_layer(x_curr)
+        outputs.append(y)
+        cell_states.append(c)
+
+
+        for t in range(x[1:].shape[0]):
+            h, c = self.step(x_curr, h, c)
+            y = torch.softmax(self.linear_list[t](h), dim=-1)
+            x_curr = torch.argmax(y, dim=-1)
+            x_curr = embedding_layer(x_curr)
+            outputs.append(y)
             cell_states.append(c)
 
         return torch.stack(outputs, dim=1), torch.stack(cell_states, dim=1)
 
 
-if __name__ == "__main__":
-    batch_size = 2
-    seq_len = 5
-    d_model = 64
-    vocab_len = 10
 
-    X = torch.randn(batch_size, seq_len, d_model)
 
-    lstm1 = LSTM(d_model, 64)
-    lstm2 = LSTM(64, 128)
-    lstm3 = LSTM(128, 64)
-    lstm4 = LSTM(64, 64)
 
-    y1,_ = lstm1(X)
-    y2,_ = lstm2(y1)
-    y3,_ = lstm3(y2)
-    y4,_ = lstm4(y3)
 
-    op_layer = nn.Linear(64, vocab_len)
 
-    y = op_layer(y4)
-    output = torch.softmax(y, dim=2)
 
-    print(output.shape)
+
+
