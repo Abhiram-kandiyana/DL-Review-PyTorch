@@ -46,7 +46,7 @@ if __name__ == "__main__":
     encoder_op = encoder_obj(X)
 
 
-    decoder_obj = DecoderBlock(d_model,seq_len,n_heads,d_ff, encoder_obj.attn.W_v, encoder_obj.attn.W_k)
+    decoder_obj = DecoderBlock(d_model,seq_len,n_heads,d_ff, encoder_obj.attn.v, encoder_obj.attn.k)
     decoder_op = decoder_obj(X)
 
     print("Output Shape", decoder_op.shape)
