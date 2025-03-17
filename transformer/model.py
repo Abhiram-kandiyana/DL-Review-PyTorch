@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from encoder import EncoderBlock
 from decoder import DecoderBlock
+from embedding import Embedding
 
 
 class Encoder(nn.Module):
@@ -43,7 +44,7 @@ class Transformer(nn.Module):
     def __init__(self, d_model, seq_len, n_heads, d_ff, vocab_len):
         super.__init__()
         self.d_model = d_model
-        self.embedding = nn.Embedding(vocab_len, d_model)
+        self.embedding = Embedding(vocab_len, d_model)
 
         self.encoder = Encoder(d_model, seq_len, n_heads, d_ff)
         self.decoder = Decoder(d_model, seq_len, n_heads, d_ff)
@@ -54,7 +55,7 @@ class Transformer(nn.Module):
 
         batch_size = x.shape[0]
 
-        x = self.embedding(x) * torch.sqrt(torch.tensor(self.d_model))
+        x = self.embedding(x)
 
         encoder_y, encoder_k, encoder_v = self.encoder(x)
 

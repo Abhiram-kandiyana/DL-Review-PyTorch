@@ -8,8 +8,8 @@
 5. What was the novelty in InceptionNet?
 
 ## CONVOLUTION FILTERS
-6. What are 1X1D convolutions used for?
-7. Why are 3X3 convolution filters better than 5X5 or 7X7
+6. What are 1X1 D convolutions used for?
+7. Why are 3X3 convolution filters better than 5X5 or 7X7?
 
 ## RECEPTIVE FIELD
 8. What is a receptive filed? Why is it useful?
