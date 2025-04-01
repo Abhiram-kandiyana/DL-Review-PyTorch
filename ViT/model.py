@@ -29,10 +29,13 @@ class Encoder(nn.Module):
 
 class VisionTransformer(nn.Module):
 
-    def __init__(self, d_model, seq_len, n_layers, n_heads, d_ff, class_len, pre_training = False):
+    def __init__(self, d_model, seq_len, n_layers, n_heads, d_ff, class_len, patch_dim, pre_training = False):
         super().__init__()
         self.d_model = d_model
+        self.patch_embed = nn.Linear(patch_dim, d_model)
+        self.cls_token = nn.Parameter(torch.randn(1, 1, d_model))
         self.embedding = Embedding(class_len, d_model)
+        self.pos_embed = nn.Parameter(torch.randn(1, seq_len + 1, d_model))
         self.pre_training = pre_training
         self.encoder = Encoder(d_model, seq_len, n_layers, n_heads, d_ff)
         self.mlp = Ffn(d_ff,d_model)
@@ -43,8 +46,11 @@ class VisionTransformer(nn.Module):
 
         batch_size = x.shape[0]
 
-        x = self.embedding(x)
+        cls_tokens = self.cls_token.expand(batch_size, -1, -1)
+        x = self.patch_embed(x)
+        x = torch.cat([cls_tokens, x], dim=1)
 
+        x = x + self.pos_embed[:, : x.shape[1], :]
         y = self.encoder(x)
 
         if self.pre_training:

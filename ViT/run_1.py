@@ -122,23 +122,37 @@ if __name__ == '__main__':
     d_ff = 512
     class_len = 2
     pre_training = True
-    patch_size = 16
+    n_patches = 16
     batch_size = 16
 
     # Build dataset with patches
-    data_with_patches = build_dataset_with_patches(main_dir, patch_size)
+    data_with_patches = build_dataset_with_patches(main_dir, n_patches)
 
     dataset = PatchDataset(data_with_patches)
 
-    seq_len = dataset.data[0].shape[1]
+    seq_len = dataset.data[0][0].shape[0]
+    patch_dim = dataset.data[0][0].shape[1]
 
     dataloader = createBatches(data_with_patches, batch_size=batch_size)
 
-    model = VisionTransformer(d_model, seq_len, n_layers, n_heads, d_ff, class_len, pre_training)
+    model = VisionTransformer(d_model, seq_len, n_layers, n_heads, d_ff, class_len, patch_dim, pre_training)
 
-    for patch_batch, label_batch in dataloader:
+    model.eval()
+    total_correct = 0
+    total_samples = 0
 
-        pass
+    with torch.no_grad():
+        for patch_batch, label_batch in dataloader:
+    
+            logits = model(patch_batch)
+            preds = logits.argmax(dim=1)
+            correct = (preds == label_batch).sum().item()
+            total_correct += correct
+            total_samples += label_batch.size(0)
+
+    accuracy = total_correct/total_samples
+    print(f'Accuracy before any training: {accuracy:.2f}')
+
 
 
 

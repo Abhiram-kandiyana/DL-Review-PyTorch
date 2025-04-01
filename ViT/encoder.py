@@ -12,20 +12,16 @@ class EncoderBlock(nn.Module):
         super().__init__()
         self.d_model = d_model
         self.attn = MultiHeadAttention(n_heads=n_heads, d_model=d_model)
-        self.pos = PositionalEncoding(seq_len=seq_len, d_model=d_model, p_dropout=p_pos_dropout)
         self.ffn = Ffn(d_ff=d_ff, d_model=d_model, p_dropout=p_ffn_dropout)
         self.init_norm = nn.LayerNorm(d_model)
         self.attn_norm = nn.LayerNorm(d_model)
         self.last_norm = nn.LayerNorm(d_model)
 
     def forward(self, x):
-        # adding positional encoding to the input
-        pos_x = self.pos(x)
-
-        x_norm = self.init_norm(pos_x)
+        x_norm = self.init_norm(x)
 
         # multi-head self attention with residual connection (post norm) applied
-        z = self.attn(x_norm) + pos_x
+        z = self.attn(x_norm) + x
 
         z_norm = self.attn_norm(z)
 
