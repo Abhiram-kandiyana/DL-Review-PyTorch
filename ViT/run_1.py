@@ -3,7 +3,12 @@ from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 from torch.utils.data import Dataset, DataLoader
 from model import VisionTransformer
+from torch import functional as F
+from torch import nn
+import torch.optim as optim
 import math
+
+seed = 42
 
 
 class PatchDataset(Dataset):
@@ -24,6 +29,7 @@ class PatchDataset(Dataset):
         label: integer class label
         """
         return self.data[idx]
+
 
 def create_patches_torch(img_tensor, patch_size=16):
     """
@@ -96,21 +102,81 @@ def build_dataset_with_patches(main_dir_path, patch_size=16):
 
     return data_with_patches
 
+
 def createBatches(data_with_patches, batch_size=16, shuffle=True, num_workers=0):
     """
     Takes a list of (patch_tensor, label) pairs and returns
     a PyTorch DataLoader that yields mini-batches.
     """
     dataset = PatchDataset(data_with_patches)
-    data_loader = DataLoader(
-        dataset,
+
+    train_dataset, test_dataset = torch.utils.data.random_split(dataset, [int(len(dataset) * 0.8),
+                                                                          int(len(dataset) * 0.2)])
+    train_dataset, val_dataset = torch.utils.data.random_split(train_dataset, [int(len(train_dataset) * 0.8),
+                                                                               int(len(train_dataset) * 0.2)])
+
+    train_data_loader = DataLoader(
+        train_dataset,
         batch_size=batch_size,
         shuffle=shuffle,
         num_workers=num_workers
     )
-    return data_loader
+
+    val_data_loader = DataLoader(
+        val_dataset,
+        batch_size=batch_size,
+        shuffle=shuffle,
+        num_workers=num_workers
+    )
+
+    test_data_loader = DataLoader(
+        test_dataset,
+        batch_size=batch_size,
+        shuffle=shuffle,
+        num_workers=num_workers
+    )
+    return train_data_loader, val_data_loader, test_data_loader
 
 
+def train(train_loader, val_loader, model, epochs=100, device=torch.device('cpu')):
+    model = model.to(device)
+    loss = nn.CrossEntropyLoss()
+    optimizer = optim.AdamW(model.parameters(), lr=0.001)
+
+    for epoch in range(epochs):
+
+        model.train()
+        train_loss = 0.0
+
+        for patch_batch, label_batch in train_loader:
+            patch_batch = patch_batch.to(device)
+            label_batch = label_batch.to(device)
+
+            logits_batch = model(patch_batch)
+
+            batch_loss = loss(logits_batch, label_batch)
+            batch_loss.backward()
+
+            optimizer.step()
+
+            train_loss += batch_loss.item()
+
+        model.eval()
+        val_loss = 0.0
+
+        with torch.no_grad():
+            for patch_batch, label_batch in val_loader:
+                patch_batch = patch_batch.to(device)
+                label_batch = label_batch.to(device)
+
+                logits_batch = model(patch_batch)
+
+                batch_loss = loss(logits_batch, label_batch)
+
+                val_loss += batch_loss.item()
+
+        print(
+            f'Epoch {epoch + 1} completed. loss: {train_loss / len(train_loader)}, validation loss : {val_loss / len(val_loader)}')
 
 
 if __name__ == '__main__':
@@ -128,33 +194,31 @@ if __name__ == '__main__':
     # Build dataset with patches
     data_with_patches = build_dataset_with_patches(main_dir, n_patches)
 
-    dataset = PatchDataset(data_with_patches)
+    seq_len = data_with_patches[0][0].shape[0]
+    patch_dim = data_with_patches[0][0].shape[1]
 
-    seq_len = dataset.data[0][0].shape[0]
-    patch_dim = dataset.data[0][0].shape[1]
-
-    dataloader = createBatches(data_with_patches, batch_size=batch_size)
+    train_loader, val_loader, test_loader = createBatches(data_with_patches, batch_size=batch_size)
 
     model = VisionTransformer(d_model, seq_len, n_layers, n_heads, d_ff, class_len, patch_dim, pre_training)
+
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+    train(train_loader, val_loader, model, device=device)
 
     model.eval()
     total_correct = 0
     total_samples = 0
 
     with torch.no_grad():
-        for patch_batch, label_batch in dataloader:
-    
+        for patch_batch, label_batch in test_loader:
             logits = model(patch_batch)
             preds = logits.argmax(dim=1)
             correct = (preds == label_batch).sum().item()
             total_correct += correct
             total_samples += label_batch.size(0)
 
-    accuracy = total_correct/total_samples
+    accuracy = total_correct / total_samples
     print(f'Accuracy before any training: {accuracy:.2f}')
-
-
-
 
     # # Print example shapes
     # print(f'Total items in dataset: {len(data_with_patches)}')
