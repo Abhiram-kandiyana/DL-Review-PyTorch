@@ -1,12 +1,12 @@
 import torch
-from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 from torch.utils.data import Dataset, DataLoader
 from model import VisionTransformer
-from torch import functional as F
 from torch import nn
 import torch.optim as optim
-import math
+import matplotlib
+from plots import loss_curve
+import matplotlib.pyplot as plt
 
 seed = 42
 
@@ -143,10 +143,13 @@ def train(train_loader, val_loader, model, epochs=100, lr=0.005, device=torch.de
     loss = nn.CrossEntropyLoss()
     optimizer = optim.AdamW(model.parameters(), lr=lr)
 
+    train_loss_arr = []
+    val_loss_arr = []
+
     for epoch in range(epochs):
 
         model.train()
-        train_loss = 0.0
+        train_loss_epoch = 0.0
 
         for patch_batch, label_batch in train_loader:
             patch_batch = patch_batch.to(device)
@@ -159,10 +162,10 @@ def train(train_loader, val_loader, model, epochs=100, lr=0.005, device=torch.de
 
             optimizer.step()
 
-            train_loss += batch_loss.item()
+            train_loss_epoch += batch_loss.item()
 
         model.eval()
-        val_loss = 0.0
+        val_loss_epoch = 0.0
 
         with torch.no_grad():
             for patch_batch, label_batch in val_loader:
@@ -173,10 +176,25 @@ def train(train_loader, val_loader, model, epochs=100, lr=0.005, device=torch.de
 
                 batch_loss = loss(logits_batch, label_batch)
 
-                val_loss += batch_loss.item()
+                val_loss_epoch += batch_loss.item()
+
+        train_loss_epoch = train_loss_epoch / len(train_loader)
+        val_loss_epoch = val_loss_epoch / len(val_loader)
 
         print(
-            f'Epoch {epoch + 1} completed. loss: {train_loss / len(train_loader)}, validation loss : {val_loss / len(val_loader)}')
+            f'Epoch {epoch + 1} completed. loss: {train_loss_epoch}, validation loss : {val_loss_epoch}')
+
+        train_loss_arr.append(train_loss_epoch)
+        val_loss_arr.append(val_loss_epoch)
+
+    #TODO : Add code to save the plot at a user defined path
+    loss_curve(train_loss_arr, val_loss_arr)
+
+
+
+
+
+
 
 
 if __name__ == '__main__':
@@ -222,7 +240,7 @@ if __name__ == '__main__':
             total_samples += label_batch.size(0)
 
     accuracy = total_correct / total_samples
-    print(f'Accuracy before any training: {accuracy:.2f}')
+    print(f'Test Accuracy: {accuracy:.2f}')
 
     # # Print example shapes
     # print(f'Total items in dataset: {len(data_with_patches)}')
