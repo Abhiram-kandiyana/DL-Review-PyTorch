@@ -1,107 +1,231 @@
-import os
-
 import torch
+from torch.utils.data import DataLoader
+from torchvision import datasets, transforms
+from torch.utils.data import Dataset, DataLoader
 from model import VisionTransformer
-import torchvision
-from torchvision.datasets import ImageFolder
-from torchvision import transforms
-from PIL import Image
-import matplotlib
-matplotlib.use('TkAgg')
-import matplotlib.pyplot as plt
-import cv2
-import numpy as np
+from torch import functional as F
+from torch import nn
+import torch.optim as optim
+import math
 
-print(matplotlib.get_backend())
+seed = 42
 
 
-def analyze_image_dimensions(root_dir):
-    # 1. Create a dataset
-    dataset = ImageFolder(root=root_dir, transform=None)
+class PatchDataset(Dataset):
+    def __init__(self, data_with_patches):
+        """
+        data_with_patches is expected to be a list of (patch_tensor, label) pairs
+        as returned by build_dataset_with_patches.
+        """
+        self.data = data_with_patches
 
-    # 2. Collect dimensions
-    widths = []
-    heights = []
-    for img_path, _ in dataset.imgs:   # dataset.imgs is a list of (path, class_index)
-        with Image.open(img_path) as img:
-            w, h = img.size
-            widths.append(w)
-            heights.append(h)
+    def __len__(self):
+        return len(self.data)
 
-    # 3. Plot the distribution of dimensions
-    plt.figure()
-    plt.scatter(widths, heights)  # x-axis = width, y-axis = height
-    plt.xlabel('Width')
-    plt.ylabel('Height')
-    plt.title('Distribution of Image Dimensions')
-    plt.show()
+    def __getitem__(self, idx):
+        """
+        Return a single (patch_tensor, label) pair.
+        patch_tensor: shape [num_patches, patch_dim]
+        label: integer class label
+        """
+        return self.data[idx]
 
 
-def create_patches(img_path, h, w, c, patch_size=16):
+def create_patches_torch(img_tensor, patch_size=16):
+    """
+    img_tensor: A PyTorch tensor of shape [C, H, W]
+    patch_size: Size of each patch (e.g., 16)
 
-    image = cv2.imread(img_path)
-    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    Returns a tensor of shape [num_patches, patch_size * patch_size * C]
+    """
+    # H and W
+    _, H, W = img_tensor.shape
 
-    patches = []
+    # (1) Use unfold along the height dimension
+    # unfolding => shape [C, (H//patch_size), patch_size, W]
+    patches = img_tensor.unfold(dimension=1, size=patch_size, step=patch_size)
+    # Now patches shape: [C, (H/patch_size), patch_size, W]
 
-    for y in range(0, h, patch_size):
-        for x in range(0, w, patch_size):
-            patch = image[y:y+patch_size, x:x+patch_size]
-            patch = patch.reshape(patch_size * patch_size * c)
-            patches.append(patch)
+    # (2) Then unfold along the width dimension
+    # => shape [C, (H//patch_size), patch_size, (W//patch_size), patch_size]
+    patches = patches.unfold(dimension=3, size=patch_size, step=patch_size)
+    # Now patches shape: [C, (H/patch_size), patch_size, (W/patch_size), patch_size]
+
+    # (3) Re-arrange to group the patch dimensions in front
+    # => [ (H/patch_size) * (W/patch_size), C, patch_size, patch_size ]
+    patches = patches.permute(1, 3, 0, 2, 4)
+    # shape is now [(H/patch_size), (W/patch_size), C, patch_size, patch_size]
+    patches = patches.reshape(-1, img_tensor.size(0), patch_size, patch_size)
+
+    # (4) Flatten each patch to [patch_size * patch_size * C]
+    patches = patches.reshape(patches.size(0), -1)
 
     return patches
 
-def input_preprocessing(main_dir_path, w=64, h= 64, c=3, d_patch=16,):
-    # img_transform = transforms.Compose([transforms.ToTensor()])
-    #
-    # dataset = ImageFolder(
-    #     root = main_dir_path,
-    #     # transform=img_transform
-    # )
 
-    class_list = os.listdir(main_dir_path)
-    class_list.sort()
-    if '.DS_Store' in class_list:
-        class_list.remove('.DS_Store')
+def build_dataset_with_patches(main_dir_path, patch_size=16):
+    """
+    1. Loads images from main_dir_path via ImageFolder.
+    2. Resizes them to 64x64, converts to tensor.
+    3. Splits each image into patch_size x patch_size patches.
+    4. Flattens patches into 1D vectors.
+    5. Returns a list of (patch_tensor, label) pairs for each image.
 
-    dataset = []
-    for class_index,class_name in enumerate(class_list):
-        img_dir = os.listdir(os.path.join(main_dir_path, class_name))
-        for img_index, img_name in enumerate(img_dir):
-            img_path = os.path.join(main_dir_path, class_name, img_name)
-            patches = create_patches(img_path,h, w, c, d_patch)
-            dataset.append((patches,class_index))
+    NOTE: This example stores everything in memory. If your dataset is huge,
+          consider building a custom Dataset or a streaming approach to avoid
+          storing all patches at once.
+    """
 
-    print(dataset)
+    # Basic transform: resize to 64x64, convert to tensor
+    transform_ops = transforms.Compose([
+        # transforms.Resize((64, 64)),
+        transforms.ToTensor(),  # shape => [C, 64, 64]
+    ])
+
+    # 1. Build dataset using ImageFolder
+    dataset = datasets.ImageFolder(root=main_dir_path, transform=transform_ops)
+
+    # We'll create a list to hold (patch_tensor, label) for each image
+    data_with_patches = []
+
+    # 2. Iterate through dataset, create patches
+    for idx in range(len(dataset)):
+        img_tensor, label = dataset[idx]
+        # shape => [C=3, H=64, W=64] if it's a color image
+
+        # 3. Create patches for this image
+        patch_tensor = create_patches_torch(img_tensor, patch_size=patch_size)
+        # shape => [num_patches, patch_size * patch_size * C]
+
+        # 4. Store the patch_tensor + label
+        data_with_patches.append((patch_tensor, label))
+
+    return data_with_patches
 
 
-main_dir_path = '/Users/abhiramkandiyana/LLMsFromScratch/ViT/data'
-# analyze_image_dimensions(main_dir_path)
-input_preprocessing(main_dir_path)
+def createBatches(data_with_patches, batch_size=16, shuffle=True, num_workers=0):
+    """
+    Takes a list of (patch_tensor, label) pairs and returns
+    a PyTorch DataLoader that yields mini-batches.
+    """
+    dataset = PatchDataset(data_with_patches)
 
-# d_model = 32
-# seq_len = 5
-# n_layers = 2
-# n_heads = 2
-# d_ff = 64
-# class_len = 10
-#
-# model = VisionTransformer(
-#     d_model=d_model,
-#     seq_len=seq_len,
-#     n_layers=n_layers,
-#     n_heads=n_heads,
-#     d_ff=d_ff,
-#     class_len=class_len,
-#     pre_training=True
-# )
-#
-# x = torch.tensor([
-#     [0, 1, 2, 3, 4],
-#     [5, 6, 7, 8, 9]
-# ])
-#
-# logits = model(x)
-#
-# print("Logits shape:", logits.shape)
+    train_dataset, test_dataset = torch.utils.data.random_split(dataset, [int(len(dataset) * 0.8),
+                                                                          int(len(dataset) * 0.2)])
+    train_dataset, val_dataset = torch.utils.data.random_split(train_dataset, [int(len(train_dataset) * 0.8),
+                                                                               int(len(train_dataset) * 0.2)])
+
+    train_data_loader = DataLoader(
+        train_dataset,
+        batch_size=batch_size,
+        shuffle=shuffle,
+        num_workers=num_workers
+    )
+
+    val_data_loader = DataLoader(
+        val_dataset,
+        batch_size=batch_size,
+        shuffle=shuffle,
+        num_workers=num_workers
+    )
+
+    test_data_loader = DataLoader(
+        test_dataset,
+        batch_size=batch_size,
+        shuffle=shuffle,
+        num_workers=num_workers
+    )
+    return train_data_loader, val_data_loader, test_data_loader
+
+
+def train(train_loader, val_loader, model, epochs=100, lr=0.005, device=torch.device('cpu')):
+    model = model.to(device)
+    loss = nn.CrossEntropyLoss()
+    optimizer = optim.AdamW(model.parameters(), lr=lr)
+
+    for epoch in range(epochs):
+
+        model.train()
+        train_loss = 0.0
+
+        for patch_batch, label_batch in train_loader:
+            patch_batch = patch_batch.to(device)
+            label_batch = label_batch.to(device)
+
+            logits_batch = model(patch_batch)
+
+            batch_loss = loss(logits_batch, label_batch)
+            batch_loss.backward()
+
+            optimizer.step()
+
+            train_loss += batch_loss.item()
+
+        model.eval()
+        val_loss = 0.0
+
+        with torch.no_grad():
+            for patch_batch, label_batch in val_loader:
+                patch_batch = patch_batch.to(device)
+                label_batch = label_batch.to(device)
+
+                logits_batch = model(patch_batch)
+
+                batch_loss = loss(logits_batch, label_batch)
+
+                val_loss += batch_loss.item()
+
+        print(
+            f'Epoch {epoch + 1} completed. loss: {train_loss / len(train_loader)}, validation loss : {val_loss / len(val_loader)}')
+
+
+if __name__ == '__main__':
+    # Example usage:
+    main_dir = '/Users/abhiramkandiyana/LLMsFromScratch/ViT/data'  # each subfolder in 'images/' is a class
+    # Model Params
+    d_model = 384
+    n_layers = 6
+    n_heads = 4
+    d_ff = 1536
+    class_len = 2
+    pre_training = True
+    n_patches = 16
+
+    #Hyper Params
+    batch_size = 16
+    lr = 0.005
+
+    # Build dataset with patches
+    data_with_patches = build_dataset_with_patches(main_dir, n_patches)
+
+    seq_len = data_with_patches[0][0].shape[0]
+    patch_dim = data_with_patches[0][0].shape[1]
+
+    train_loader, val_loader, test_loader = createBatches(data_with_patches, batch_size=batch_size)
+
+    model = VisionTransformer(d_model, seq_len, n_layers, n_heads, d_ff, class_len, patch_dim, pre_training)
+
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+    train(train_loader, val_loader, model, lr, device=device)
+
+    model.eval()
+    total_correct = 0
+    total_samples = 0
+
+    with torch.no_grad():
+        for patch_batch, label_batch in test_loader:
+            logits = model(patch_batch)
+            preds = logits.argmax(dim=1)
+            correct = (preds == label_batch).sum().item()
+            total_correct += correct
+            total_samples += label_batch.size(0)
+
+    accuracy = total_correct / total_samples
+    print(f'Accuracy before any training: {accuracy:.2f}')
+
+    # # Print example shapes
+    # print(f'Total items in dataset: {len(data_with_patches)}')
+    # example_patch_tensor, example_label = data_with_patches[0]
+    # print(f'Example patch tensor shape: {example_patch_tensor.shape}')
+    # print(f'Example label: {example_label}')
