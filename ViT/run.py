@@ -6,6 +6,7 @@ from torch import nn
 import torch.optim as optim
 import matplotlib
 from plots import loss_curve
+import os
 import matplotlib.pyplot as plt
 
 seed = 42
@@ -63,9 +64,9 @@ def create_patches_torch(img_tensor, patch_size=16):
     return patches
 
 
-def build_dataset_with_patches(main_dir_path, patch_size=16):
+def build_dataset_with_patches(data_dir_path, patch_size=16):
     """
-    1. Loads images from main_dir_path via ImageFolder.
+    1. Loads images from data_dir_path via ImageFolder.
     2. Resizes them to 64x64, converts to tensor.
     3. Splits each image into patch_size x patch_size patches.
     4. Flattens patches into 1D vectors.
@@ -83,7 +84,7 @@ def build_dataset_with_patches(main_dir_path, patch_size=16):
     ])
 
     # 1. Build dataset using ImageFolder
-    dataset = datasets.ImageFolder(root=main_dir_path, transform=transform_ops)
+    dataset = datasets.ImageFolder(root=data_dir_path, transform=transform_ops)
 
     # We'll create a list to hold (patch_tensor, label) for each image
     data_with_patches = []
@@ -138,7 +139,8 @@ def createBatches(data_with_patches, batch_size=16, shuffle=True, num_workers=0)
     return train_data_loader, val_data_loader, test_data_loader
 
 
-def train(train_loader, val_loader, model, epochs=100, lr=0.005, device=torch.device('cpu')):
+def train(train_loader, val_loader, model, results_path, epochs=100, lr=0.005, device=torch.device('cpu')):
+
     model = model.to(device)
     loss = nn.CrossEntropyLoss()
     optimizer = optim.AdamW(model.parameters(), lr=lr)
@@ -188,7 +190,7 @@ def train(train_loader, val_loader, model, epochs=100, lr=0.005, device=torch.de
         val_loss_arr.append(val_loss_epoch)
 
     #TODO : Add code to save the plot at a user defined path
-    loss_curve(train_loss_arr, val_loss_arr)
+    loss_curve(train_loss_arr, val_loss_arr, os.path.join(results_path, 'plots'))
 
 
 
@@ -199,7 +201,9 @@ def train(train_loader, val_loader, model, epochs=100, lr=0.005, device=torch.de
 
 if __name__ == '__main__':
     # Example usage:
-    main_dir = '/Users/abhiramkandiyana/LLMsFromScratch/ViT/data'  # each subfolder in 'images/' is a class
+    main_dir = '/Users/abhiramkandiyana/LLMsFromScratch/ViT/'
+    data_dir = os.path.join(main_dir, 'data')  # each subfolder in 'images/' is a class
+    result_dir_path = os.path.join(main_dir, 'results')
     # Model Params
     d_model = 384
     n_layers = 6
@@ -210,11 +214,11 @@ if __name__ == '__main__':
     n_patches = 16
 
     #Hyper Params
-    batch_size = 16
+    batch_size = 64
     lr = 0.005
 
     # Build dataset with patches
-    data_with_patches = build_dataset_with_patches(main_dir, n_patches)
+    data_with_patches = build_dataset_with_patches(data_dir, n_patches)
 
     seq_len = data_with_patches[0][0].shape[0]
     patch_dim = data_with_patches[0][0].shape[1]
@@ -225,7 +229,7 @@ if __name__ == '__main__':
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    train(train_loader, val_loader, model, lr, device=device)
+    train(train_loader, val_loader, model, result_dir_path, device=device)
 
     model.eval()
     total_correct = 0
